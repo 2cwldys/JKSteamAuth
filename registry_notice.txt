@@ -1,0 +1,124 @@
+Registry & loginusers.vdf Access Notice
+========================================
+Steam Authentication Support for Jedi Academy Multiplayer
+Copyright (C) 2025 2cwldys — GNU GPL v2 or later
+
+This document explains exactly what the code reads from the Windows registry
+and from loginusers.vdf, and why.  Nothing is written, modified, or deleted.
+All access is read-only.
+
+
+WINDOWS REGISTRY
+----------------
+Two registry keys are read, both under HKEY_CURRENT_USER (the current user's
+hive only — no system-wide or other-user access).
+
+1. HKEY_CURRENT_USER\Software\Valve\Steam
+   Value read: SteamPath  (REG_SZ — a directory path string)
+
+   Purpose: locates the Steam installation directory so the code can find
+   loginusers.vdf.  Example value:
+     C:\Program Files (x86)\Steam
+
+   Source: ui_steamload.c — ReadPersonaName() (Windows stage 1, ~line 182)
+
+     RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\Valve\\Steam", 0, KEY_READ, &hKey);
+     RegQueryValueExA(hKey, "SteamPath", NULL, NULL, (LPBYTE)steamPath, &len);
+
+
+2. HKEY_CURRENT_USER\Software\Valve\Steam\ActiveProcess
+   Value read: ActiveUser  (REG_DWORD — a 32-bit integer)
+
+   Purpose: identifies which Steam account is currently logged in.  This is
+   a partial account ID (the low 32 bits of the Steam64 ID).  The code
+   derives the full Steam64 ID with:
+
+     steamID64 = 76561197960265728 + (uint64)accountID
+
+   The constant 76561197960265728 is the fixed base of Valve's Steam64 ID
+   space (universe 1, account type Individual).  It is public knowledge
+   documented in the Steamworks API reference.
+
+   Source: ui_steamload.c — UI_FetchSteamIdentity() (Windows, ~line 267)
+
+     RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\Valve\\Steam\\ActiveProcess",
+                   0, KEY_READ, &hKey);
+     RegQueryValueExA(hKey, "ActiveUser", NULL, NULL, (LPBYTE)&accountID, &len);
+
+
+LINUX — NO REGISTRY
+--------------------
+Linux has no registry.  The code instead searches for loginusers.vdf directly
+at the two standard Steam install paths (see loginusers.vdf section below).
+No other system files or environment beyond $HOME are accessed.
+
+
+loginusers.vdf
+--------------
+loginusers.vdf is a plain text file written by the Steam client that records
+every Steam account that has ever logged in on this machine.  It is located at:
+
+  Windows : <SteamPath>\config\loginusers.vdf
+              (SteamPath read from registry key 1 above)
+
+  Linux   : ~/.steam/steam/config/loginusers.vdf
+         or ~/.local/share/Steam/config/loginusers.vdf
+              (both paths tried in order)
+
+The file uses Valve's KeyValues text format.  A typical example with two
+accounts looks like this:
+
+  "users"
+  {
+      "76561198012345678"
+      {
+          "AccountName"    "mysteamlogin"
+          "PersonaName"    "MyDisplayName"
+          "RememberPassword"    "1"
+          "MostRecent"    "1"
+          "Timestamp"    "1700000000"
+      }
+      "76561198087654321"
+      {
+          "AccountName"    "oldaccount"
+          "PersonaName"    "OldName"
+          "RememberPassword"    "0"
+          "MostRecent"    "0"
+          "Timestamp"    "1650000000"
+      }
+  }
+
+Fields read by this code:
+
+  Key name (e.g. "76561198012345678")
+    The Steam64 ID of the account as a decimal string.
+
+  PersonaName
+    The display name shown in Steam and in-game.  This becomes cl_steamname
+    and, when g_steam_forcename is set on the server, the player's in-game name.
+
+  MostRecent   (Linux only)
+    "1" on the account that logged in most recently.  Used on Linux to select
+    which account to use when the registry is unavailable.
+
+Fields NOT read (ignored entirely):
+  AccountName, RememberPassword, Timestamp, and any other fields present.
+
+Nothing is written to loginusers.vdf.  The file handle is opened read-only
+and closed immediately after parsing.
+
+
+WHAT IS TRANSMITTED TO THE SERVER
+----------------------------------
+After reading the above, the code sets two CVars with CVAR_USERINFO:
+
+  cl_steamid    — the Steam64 ID as a decimal string, e.g. "76561198012345678"
+  cl_steamname  — the PersonaName string, e.g. "MyDisplayName"
+
+Because these are CVAR_USERINFO, the JKA engine automatically includes them
+in the userinfo string sent to the server on connect and on any CVar change.
+The server receives them as part of the standard userinfo handshake — no
+custom network packets are used.
+
+The server stores cl_steamid in client->sess.steamID (a 21-byte char field
+you add to clientSession_t) for ban checking and logging purposes only.
