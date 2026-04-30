@@ -374,10 +374,7 @@ static void UI_FetchLiveSteamIdentity(void)
 	trap_Cvar_Set("cl_steamid", idStr);
 
 	if (name && name[0])
-	{
 		trap_Cvar_Set("cl_steamname", name);
-		trap_Cvar_Set("name", name);
-	}
 
 	Com_Printf("^2Steam live identity: %s (%s)\n",
 		(name && name[0]) ? name : "(no name)", idStr);
@@ -637,7 +634,7 @@ qboolean UI_LoadSteamAPI(void)
 		{
 			Com_sprintf(idStr, sizeof(idStr), "%llu", steamID64);
 			trap_Cvar_Set("cl_steamid", idStr);
-			if (name && name[0]) { trap_Cvar_Set("cl_steamname", name); trap_Cvar_Set("name", name); }
+			if (name && name[0]) { trap_Cvar_Set("cl_steamname", name); }
 			Com_Printf("^2Steam live identity: %s (%s)\n",
 				(name && name[0]) ? name : "(no name)", idStr);
 			success = qtrue;
